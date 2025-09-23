@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Распределение вопросов и индивидуальных заданий — Лаб.1</title>
+  <style>
+    :root { --bg:#0f172a; --card:#111827; --muted:#94a3b8; --txt:#e5e7eb; --accent:#22c55e; --danger:#ef4444; }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;background:linear-gradient(180deg,#0b1023,#0f172a);color:var(--txt)}
+    .wrap{max-width:1100px;margin:40px auto;padding:0 16px}
+    .card{background:rgba(17,24,39,.7);backdrop-filter:saturate(120%) blur(8px);border:1px solid rgba(148,163,184,.15);border-radius:16px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    h1{font-size:clamp(22px,2.6vw,34px);margin:0 0 12px}
+    p.lead{color:var(--muted);margin:0 0 18px}
+    .grid{display:grid;gap:16px}
+    @media (min-width:960px){.grid{grid-template-columns:1.2fr 1fr}}
+    .section-title{font-weight:700;margin:12px 0 8px;font-size:15px;color:#cbd5e1;letter-spacing:.02em;text-transform:uppercase}
+    label{display:block;font-size:14px;color:#cbd5e1;margin:8px 0 6px}
+    input[type="text"], input[type="number"], textarea{width:100%;padding:12px 12px;border-radius:12px;border:1px solid rgba(148,163,184,.25);background:#0b1220;color:var(--txt);outline:none}
+    textarea{min-height:160px;resize:vertical;line-height:1.45}
+    .row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .btns{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+    button{cursor:pointer;border:none;border-radius:12px;padding:10px 14px;font-weight:700}
+    .primary{background:var(--accent);color:#052e16}
+    .ghost{background:transparent;color:var(--txt);border:1px solid rgba(148,163,184,.3)}
+    .danger{background:var(--danger);color:#fff}
+    .muted{color:var(--muted)}
+    .result{margin-top:14px;padding:14px;border:1px dashed rgba(148,163,184,.35);border-radius:12px;background:rgba(2,6,23,.5)}
+    .bad{color:#fecaca}
+    .monos{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+    .kpi{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:10px}
+    .pill{border:1px solid rgba(148,163,184,.35);border-radius:999px;padding:8px 10px;text-align:center;background:rgba(15,23,42,.65)}
+    .list{display:flex;flex-wrap:wrap;gap:8px}
+    .chip{background:#0b1220;border:1px solid rgba(148,163,184,.3);padding:6px 10px;border-radius:999px}
+    .foot{margin-top:16px;font-size:12px;color:#9ca3af}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Распределение 5 вопросов и 1 индивидуального задания</h1>
+      <p class="lead">Алгоритм использует <strong>№ в списке</strong>, количество букв в <strong>имени</strong> и <strong>фамилии</strong> (считаются только буквы). В банках по 15 позиций. Для каждого студента выбираются 5 разных вопросов и 1 задание.</p>
+
+      <div class="grid">
+        <section>
+          <div class="section-title">Данные студента</div>
+          <div class="row">
+            <div>
+              <label>№ в списке (N)</label>
+              <input id="num" type="number" min="1" step="1" placeholder="например, 7" />
+            </div>
+            <div>
+              <label>Имя</label>
+              <input id="name" type="text" placeholder="например, Алишер" />
+            </div>
+            <div>
+              <label>Фамилия</label>
+              <input id="surname" type="text" placeholder="например, Ибрагимов" />
+            </div>
+          </div>
+
+          <div class="btns">
+            <button class="primary" onclick="compute()">Рассчитать</button>
+            <button class="ghost" onclick="copyResult()">Скопировать результат</button>
+            <button class="ghost" onclick="window.print()">Печать</button>
+            <button class="danger" onclick="resetForm()">Сброс</button>
+          </div>
+
+          <div id="out" class="result monos"></div>
+        </section>
+
+        <section>
+          <div class="section-title">Банки формулировок (редактируемые)</div>
+          <label>Банк A — 15 вопросов (по одному на строке)</label>
+          <textarea id="bankA"></textarea>
+          <label style="margin-top:10px">Банк B — 15 индивидуальных заданий (по одному на строке)</label>
+          <textarea id="bankB"></textarea>
+        </section>
+      </div>
+
+      <div class="foot">Примечание: шаг подбирается взаимно простым с 15 для обеспечения уникальности 5 индексов. Считаются только буквы (Unicode), регистр и диакритика не влияют; дефисы, пробелы и апострофы игнорируются.</div>
+    </div>
+  </div>
+
+<script>
+  // --- Вспомогательные ---
+  function onlyLettersLen(s){
+    if(!s) return 0;
+    // Учитываем все буквенные символы Юникода; игнорируем всё остальное
+    const cleaned = (s.normalize('NFC').match(/\p{L}/gu) || []).join('');
+    return cleaned.length;
+  }
+  const gcd = (a,b)=> b?gcd(b,a%b):Math.abs(a);
+  function makeCoprime15(x){
+    x = ((x%15)+15)%15; // к диапазону 0..14
+    if(x===0) x=1;
+    // увеличиваем, пока gcd(x,15) != 1
+    while(gcd(x,15)!==1){
+      x = (x % 15) + 1; // 1..15
+      if(x===15) x=1;   // избегаем 15
+    }
+    return x; // из множества {1,2,4,7,8,11,13,14}
+  }
+
+  function compute(){
+    const N = parseInt(document.getElementById('num').value,10);
+    const name = document.getElementById('name').value || '';
+    const surname = document.getElementById('surname').value || '';
+    const Ln = onlyLettersLen(name);
+    const Ls = onlyLettersLen(surname);
+
+    const out = document.getElementById('out');
+    if(!(N>=1)){
+      out.innerHTML = '<span class="bad">Укажите корректный номер в списке (целое ≥ 1).</span>';
+      return;
+    }
+
+    // Алгоритм выбора вопросов (банк A)
+    const b = (N + Ln + 2*Ls) % 15; // 0..14
+    const s0 = (Ln + Ls) % 15;
+    const s = makeCoprime15(s0);
+
+    const qIdx = [];
+    for(let i=1;i<=5;i++){
+      const qi = ((b + (i-1)*s) % 15) + 1; // 1..15
+      qIdx.push(qi);
+    }
+
+    // Алгоритм выбора задания (банк B)
+    const t = ((N + 3*Ln + 5*Ls) % 15) + 1; // 1..15
+
+    // Подстановка формулировок, если заданы
+    const bankA = (document.getElementById('bankA').value || '').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    const bankB = (document.getElementById('bankB').value || '').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+
+    const questions = qIdx.map(i=>({i, text: bankA[i-1] || ''}));
+    const taskText = bankB[t-1] || '';
+
+    // Вывод
+    const kpi = `
+      <div class="kpi">
+        <div class="pill">N: <strong>${N}</strong></div>
+        <div class="pill">Ln: <strong>${Ln}</strong></div>
+        <div class="pill">Ls: <strong>${Ls}</strong></div>
+        <div class="pill">шаг s: <strong>${s}</strong></div>
+      </div>`;
+
+    const qChips = questions.map(q=>`<span class="chip">${q.i}${q.text?`: ${escapeHtml(q.text)}`:''}</span>`).join('');
+    const taskChip = `<span class="chip">${t}${taskText?`: ${escapeHtml(taskText)}`:''}</span>`;
+
+    out.innerHTML = `
+      ${kpi}
+      <div style="margin-top:10px">
+        <div class="section-title" style="margin-top:4px">Вопросы (5 из 15)</div>
+        <div class="list">${qChips}</div>
+        <div class="section-title" style="margin-top:14px">Индивидуальное задание (1 из 15)</div>
+        <div class="list">${taskChip}</div>
+      </div>
+      <div style="margin-top:12px" class="muted">Формулы: b=(N+Ln+2·Ls) mod 15, q<sub>i</sub> = (b+(i−1)·s) mod 15 + 1; s — взаимно просто с 15. Задание: t=(N+3·Ln+5·Ls) mod 15 + 1.</div>
+    `;
+  }
+
+  function copyResult(){
+    const out = document.getElementById('out');
+    if(!out.textContent.trim()) return;
+    const el = document.createElement('textarea');
+    el.value = out.innerText;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    alert('Результат скопирован в буфер обмена.');
+  }
+
+  function resetForm(){
+    document.getElementById('num').value = '';
+    document.getElementById('name').value = '';
+    document.getElementById('surname').value = '';
+    document.getElementById('out').innerHTML = '';
+  }
+
+  function escapeHtml(str){
+    return str.replace(/[&<>"']/g, (m)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+  }
+
+  // --- Заполнить банки по умолчанию ---
+  const defaultsA = [
+    'Определение IDE и возможности Dev-C++',
+    'Этапы сборки: редактирование → компиляция → линковка → запуск',
+    'Разница между компиляцией и интерпретацией',
+    'Базовые типы C++: int, float, double, char, bool',
+    'Инициализация и объявление переменных',
+    'Область видимости и время жизни переменных',
+    'Ввод данных: оператор cin, потоковое извлечение',
+    'Вывод данных: оператор cout, форматирование',
+    'Линейная структура алгоритма: последовательность операторов',
+    'Правила именования идентификаторов',
+    'Создание проекта в Dev-C++: шаги и настройки',
+    'Подключение iostream и использование пространства имен std',
+    'Побочные эффекты приведения типов (int ↔ double)',
+    'Тестирование на наборе входных данных',
+    'Отладка: сообщения компилятора и исправление ошибок'
+  ];
+  const defaultsB = [
+    'Площадь прямоугольника по сторонам',
+    'Перевод °C → °F',
+    'Среднее арифметическое трёх чисел',
+    'Длина окружности по радиусу',
+    'Километры → мили',
+    'Объём куба по ребру',
+    'Площадь круга по радиусу',
+    'Периметр треугольника по трём сторонам',
+    'Скорость движения: S/t',
+    'Килограммы → фунты',
+    'Квадрат и куб числа',
+    'Стоимость с учётом скидки',
+    'Q = c·m·Δt — оценка времени нагрева (упрощенно)',
+    'Вычисление y = ax^2 + bx + c',
+    'Объём цилиндра по r и h'
+  ];
+  document.getElementById('bankA').value = defaultsA.join('\n');
+  document.getElementById('bankB').value = defaultsB.join('\n');
+</script>
+</body>
+</html>
