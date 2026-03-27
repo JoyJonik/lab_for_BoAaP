@@ -310,7 +310,8 @@ class InfogreffePlaywrightScraper:
                         # Обновляем DataFrame
                         for key, value in data.items():
                             if key in df.columns and value:
-                                df.at[i, key] = value
+                                # Преобразуем значение в строку для избежания проблем с типами данных
+                                df.at[i, key] = str(value)
                         
                         self.results.append(data)
                 
