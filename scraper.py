@@ -13,8 +13,10 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 from datetime import datetime
 import logging
 
+# ИСПРАВЛЕНИЕ ДЛЯ PYTHON 3.13 НА WINDOWS
 if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    # Используем ProactorEventLoop, который поддерживает подпроцессы (необходимо для Playwright)
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 logging.basicConfig(
     level=logging.INFO,
