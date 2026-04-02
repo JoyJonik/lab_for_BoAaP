@@ -420,9 +420,9 @@ class PappersPlaywrightScraper:
                                 
                                 # Сохраняем данные
                                 label_clean = label.strip().lower()
-                                if 'chiffre d'affaires' in label_clean or 'оборот' in label_clean:
+                                if "chiffre d'affaires" in label_clean or 'ca' in label_clean:
                                     financial_data['revenue'] = values
-                                elif 'résultat net' in label_clean or 'результат' in label_clean:
+                                elif 'résultat net' in label_clean or 'resultat' in label_clean:
                                     financial_data['net_result'] = values
                                 elif 'ebitda' in label_clean:
                                     financial_data['ebitda'] = values
