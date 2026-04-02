@@ -85,25 +85,31 @@ class PappersPlaywrightScraper:
         except:
             logger.debug("Окно с куки не найдено")
     
-    async def scrape_search_pages(self, start_page=1, end_page=20):
-        """Парсинг поисковых страниц и сбор ссылок на компании"""
-        base_url = "https://www.pappers.fr/recherche?activite=20.42Z&capital_min=0&capital_max=10000000000&effectifs_min=1&effectifs_max=500000&date_publication_min=03-10-2025&date_publication_max=02-04-2026&page={page}"
+    async def scrape_search_pages_manual(self, total_pages=20):
+        """Ручной парсинг поисковых страниц - пользователь сам переключает страницы"""
+        base_url = "https://www.pappers.fr/recherche?activite=20.42Z&capital_min=0&capital_max=10000000000&effectifs_min=1&effectifs_max=500000&date_publication_min=03-10-2025&date_publication_max=02-04-2026&page=1"
         
         all_companies = []
         
-        for page_num in range(start_page, end_page + 1):
-            url = base_url.format(page=page_num)
-            logger.info(f"Парсинг страницы {page_num}/{end_page}: {url}")
+        logger.info(f"=== РУЧНОЙ РЕЖИМ: Откройте браузер и перейдите по {total_pages} страницам ===")
+        logger.info(f"Начальная URL: {base_url}")
+        logger.info("После загрузки каждой страницы скрипт автоматически соберет компании.")
+        logger.info(f"Необходимо вручную перейти на {total_pages} страниц (нажимая стрелку вправо).")
+        logger.info("После сбора компаний со всех страниц начнется автоматический сбор детальных данных.")
+        
+        # Загружаем первую страницу
+        await self.page.goto(base_url, wait_until='networkidle')
+        await asyncio.sleep(3)
+        await self.close_cookies()
+        
+        for page_num in range(1, total_pages + 1):
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Ожидание данных страницы {page_num}/{total_pages}...")
+            logger.info(f"{'='*60}")
             
             try:
-                await self.page.goto(url, wait_until='networkidle')
-                await asyncio.sleep(3)
-                
-                # Закрываем куки если есть
-                await self.close_cookies()
-                
                 # Ждем загрузки результатов
-                await self.page.wait_for_selector('.container-resultat', timeout=10000)
+                await self.page.wait_for_selector('.container-resultat', timeout=30000)
                 await asyncio.sleep(2)
                 
                 # Находим все блоки с компаниями
@@ -186,23 +192,82 @@ class PappersPlaywrightScraper:
                                 info['capital'] = ''
                             
                             all_companies.append(info)
-                            logger.info(f"Добавлена компания: {company_name}")
+                            logger.info(f"  -> Добавлена компания: {company_name}")
                     
                     except Exception as e:
                         logger.warning(f"Ошибка при парсинге компании: {e}")
                         continue
                 
-                await asyncio.sleep(2)
+                # Если это не последняя страница, просим пользователя перейти дальше
+                if page_num < total_pages:
+                    logger.info(f"\n{'='*60}")
+                    logger.info(f"Страница {page_num} обработана. Собрано {len([c for c in all_companies if c['page_source'] == page_num])} компаний.")
+                    logger.info(f"Всего собрано компаний: {len(all_companies)}")
+                    logger.info(f"ПОЖАЛУЙСТА, НАЖМИТЕ СТРЕЛКУ ВПРАВО для перехода на страницу {page_num + 1}")
+                    logger.info(f"Скрипт продолжит автоматически после обнаружения новых данных...")
+                    logger.info(f"{'='*60}\n")
+                    
+                    # Ждем появления новой страницы (ожидание изменения контента)
+                    await self.wait_for_next_page(page_num)
                 
             except PlaywrightTimeout:
-                logger.warning(f"Таймаут при загрузке страницы {page_num}")
+                logger.warning(f"Таймаут при ожидании страницы {page_num}")
+                if page_num < total_pages:
+                    logger.info(f"Попробуйте вручную перейти на страницу {page_num + 1}")
+                    await self.wait_for_next_page(page_num)
                 continue
             except Exception as e:
                 logger.error(f"Ошибка при парсинге страницы {page_num}: {e}")
+                if page_num < total_pages:
+                    await self.wait_for_next_page(page_num)
                 continue
         
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Все {total_pages} страниц обработаны!")
         logger.info(f"Всего найдено {len(all_companies)} компаний")
+        logger.info(f"{'='*60}")
         return all_companies
+    
+    async def wait_for_next_page(self, current_page):
+        """Ожидание перехода на следующую страницу"""
+        import time
+        
+        max_wait = 120  # Максимальное время ожидания 2 минуты на страницу
+        wait_interval = 0.5
+        waited = 0
+        
+        # Запоминаем текущие компании
+        prev_count = len(await self.page.query_selector_all('.container-resultat'))
+        
+        while waited < max_wait:
+            await asyncio.sleep(wait_interval)
+            waited += wait_interval
+            
+            try:
+                # Проверяем, появились ли новые элементы
+                current_blocks = await self.page.query_selector_all('.container-resultat')
+                current_count = len(current_blocks)
+                
+                # Если количество изменилось или прошло достаточно времени, проверяем контент
+                if current_count != prev_count:
+                    # Даем немного времени на полную загрузку
+                    await asyncio.sleep(2)
+                    break
+                
+                # Проверяем номер страницы в пагинации
+                page_indicator = await self.page.query_selector('.texte-droite p')
+                if page_indicator:
+                    page_text = await page_indicator.text_content()
+                    # Если номер страницы изменился, выходим
+                    if page_text and str(current_page + 1) in page_text:
+                        await asyncio.sleep(2)
+                        break
+                        
+            except:
+                pass
+        
+        if waited >= max_wait:
+            logger.warning("Превышено время ожидания. Переходим к следующей странице или завершаем...")
     
     async def extract_company_data(self, url):
         """Извлечение данных со страницы компании на pappers.fr"""
@@ -494,15 +559,15 @@ class PappersPlaywrightScraper:
             logger.error(f"Ошибка сбора данных: {e}")
             return None
     
-    async def scrape_all_companies(self, start_page=1, end_page=20, output_file='pappers_companies.xlsx'):
-        """Полный цикл: парсинг поисковых страниц и сбор детальных данных по компаниям"""
+    async def scrape_all_companies_manual(self, total_pages=20, output_file='pappers_companies.xlsx'):
+        """Полный цикл с ручным переключением страниц: сбор ссылок и детальных данных"""
         
         await self.init_browser(headless=False)
         
         try:
-            # Шаг 1: Собираем ссылки на компании с поисковых страниц
-            logger.info(f"Начинаем парсинг поисковых страниц с {start_page} по {end_page}")
-            companies_list = await self.scrape_search_pages(start_page=start_page, end_page=end_page)
+            # Шаг 1: Собираем ссылки на компании с поисковых страниц (ручное переключение)
+            logger.info(f"Начинаем ручной сбор ссылок с {total_pages} страниц")
+            companies_list = await self.scrape_search_pages_manual(total_pages=total_pages)
             
             if not companies_list:
                 logger.warning("Не найдено компаний на поисковых страницах")
@@ -586,9 +651,8 @@ class PappersPlaywrightScraper:
 async def main():
     scraper = PappersPlaywrightScraper()
     
-    await scraper.scrape_all_companies(
-        start_page=1,
-        end_page=20,
+    await scraper.scrape_all_companies_manual(
+        total_pages=20,
         output_file='pappers_parfumerie_companies.xlsx'
     )
 
